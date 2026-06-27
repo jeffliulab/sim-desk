@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 缓存 / 临时
+.ruff_cache/
+.pytest_cache/
+*.log
+*.tmp
+
+# OS / 编辑器
+.DS_Store
+.vscode/
+.idea/
+
+# Agent 本地笔记(不入库)
+CLAUDE.md
