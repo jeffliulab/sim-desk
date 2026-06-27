@@ -4,16 +4,23 @@
 还有一个给人用的界面(可以手动拖动笔、复位)。ANIMA(大脑)不碰它的内部,只**隔着一套 HTTP 接口**
 去观测它、操作它——就像看真实世界一样。
 
-## 它对外提供什么(世界接口)
+## 它对外提供什么(它实现的就是 AWI)
 
-任何「世界」都实现同一套接口,ANIMA 那边换个 URL 就能接(这也是 sim2sim / 上真机的路径):
+任何「世界」都实现同一套 **AWI(Anima World Interface)**,ANIMA 那边换个 URL 就能接(这也是 sim2sim /
+上真机的路径):
 
 ```
+# AWI 四个端点(脑↔世界)
 GET  /capabilities  ->  {name, version, tools:[{name, description, parameters, kind}]}
 GET  /perceive      ->  {state:{"pen":[x,y]}, image_b64:"<png base64>"}
 POST /invoke {name, args}  ->  {ok, message, data}
 POST /reset         ->  {ok:true}     # 世界自己复位,给下面的人类 UI 用
-GET  /              ->  世界自己的人类 UI(单页)
+
+# 给人看的
+GET  /stream        ->  实时画面(MJPEG;摄像头 / MuJoCo 以后同理)
+GET  /awi-events    ->  AWI 实时流量(SSE,谁在调我的接口)
+GET  /awi-stats     ->  调用统计
+GET  /              ->  世界自己的人类 UI(实时画面 + AWI 状态条 + terminal)
 ```
 
 ## 文件

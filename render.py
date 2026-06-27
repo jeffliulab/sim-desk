@@ -6,7 +6,7 @@ import io
 from PIL import Image, ImageDraw
 
 
-def render_desk(pen: list[float], w: int = 640, h: int = 480) -> bytes:
+def render_desk(pen: list[float], w: int = 640, h: int = 480, fmt: str = "PNG") -> bytes:
     img = Image.new("RGB", (w, h), (222, 205, 170))  # 木色桌面
     d = ImageDraw.Draw(img)
     d.rectangle([10, 10, w - 10, h - 10], outline=(120, 90, 60), width=4)
@@ -17,5 +17,5 @@ def render_desk(pen: list[float], w: int = 640, h: int = 480) -> bytes:
         fill=(210, 170, 70),  # 笔尖
     )
     buf = io.BytesIO()
-    img.save(buf, format="PNG")
+    img.save(buf, format=fmt)  # PNG 给 /perceive(大脑用);JPEG 给 /stream(实时视频)
     return buf.getvalue()
