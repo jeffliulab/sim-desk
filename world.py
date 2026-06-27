@@ -17,15 +17,10 @@ _XY = {
     "required": ["x", "y"],
 }
 
-# 这个世界对外声明的高层动作原语(语言可读,不是关节角)
+# 这个世界对外声明的高层动作原语(语言可读,不是关节角)。
+# 只给一个、且正交的工具 —— 别给重叠/重复的(5.1:工具太多太像会让模型乱调)。
 _TOOLS = [
-    {"name": "move_pen", "description": "把笔移动到桌面上的目标位置。", "parameters": _XY, "kind": "tool"},
-    {
-        "name": "move_object",
-        "description": "把桌上的笔整理 / 移动到目标位置(多步:移动后核对到位)。",
-        "parameters": _XY,
-        "kind": "skill",
-    },
+    {"name": "move_pen", "description": "把笔移动到桌面上的目标位置 (x, y)。", "parameters": _XY, "kind": "tool"},
 ]
 
 
@@ -46,12 +41,11 @@ class DeskWorld:
 
     def step(self, name: str, **args) -> dict:
         """动:执行一个高层动作,返回 {ok, message, data}。"""
-        if name in ("move_pen", "move_object"):
+        if name == "move_pen":
             self.pen = [_clamp(args["x"]), _clamp(args["y"])]
-            verb = "整理" if name == "move_object" else "移动"
             return {
                 "ok": True,
-                "message": f"已把笔{verb}到 ({self.pen[0]:.2f}, {self.pen[1]:.2f})。",
+                "message": f"已把笔移动到 ({self.pen[0]:.2f}, {self.pen[1]:.2f})。",
                 "data": {"pen": list(self.pen)},
             }
         return {"ok": False, "message": f"未知能力:{name}", "data": {}}
