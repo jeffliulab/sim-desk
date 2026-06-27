@@ -13,9 +13,15 @@
   .wrap { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
   .left { display: flex; flex-direction: column; gap: 10px; }
   #view { border-radius: 10px; cursor: crosshair; touch-action: none; background: #000; display: block; }
+  .canvas-wrap { position: relative; width: 640px; height: 480px; }
+  /* 拖拽选区时显示的虚线框 */
+  #sel { position: absolute; border: 1.5px dashed #fff; background: rgba(255,255,255,0.12);
+         pointer-events: none; display: none; border-radius: 2px; }
   .row { display: flex; gap: 12px; align-items: center; font-size: 13px; color: #8a8f98; }
   button { background: #2b6cb0; color: #fff; border: 0; border-radius: 8px; padding: 7px 14px;
            font-size: 13px; cursor: pointer; }
+  button.tool { background: #2b3038; }            /* 未激活的工具:灰 */
+  button.tool.active { background: #2b6cb0; }       /* 当前激活的工具:蓝 */
   .panel { flex: 1; min-width: 360px; }
   .statusbar { background: #1c1f26; border: 1px solid #2a2e37; border-radius: 8px; padding: 10px 12px;
                font-size: 12px; color: #b8bdc7; margin-bottom: 10px; line-height: 1.7; }
@@ -36,15 +42,21 @@
 </head>
 <body>
   <h1>sim-desk · 模拟的真实世界</h1>
-  <div class="hint">这是一个独立运行的「世界」,实现了 <b>AWI(Anima World Interface)</b>。在桌面上按住拖动 = 移动笔;
+  <div class="hint">这是一个独立运行的「世界」,实现了 <b>AWI(Anima World Interface)</b>。下方选工具:笔/橡皮 拖出一个矩形选区 = 涂黑/擦除;移动 拖动 = 移笔;
     右边是 ANIMA 通过 AWI 和我说的每一句话。</div>
 
   <div class="wrap">
     <div class="left">
-      <img id="view" width="640" height="480" alt="desk" src="/stream" />
+      <div class="canvas-wrap">
+        <img id="view" width="640" height="480" alt="desk" src="/stream" />
+        <div id="sel"></div>
+      </div>
       <div class="row">
+        <button id="tool-pen" class="tool active">✏️ 笔</button>
+        <button id="tool-eraser" class="tool">🧽 橡皮</button>
+        <button id="tool-move" class="tool">✋ 移动</button>
         <button id="reset">复位</button>
-        <span>左边是实时视频流(MJPEG),你拖笔 ANIMA 那边立刻能看到</span>
+        <span>笔/橡皮:拖出矩形选区涂黑/擦除;移动:拖动移笔。ANIMA 那边立刻能看到</span>
       </div>
     </div>
 
@@ -57,19 +69,64 @@
 
 <script>
   const view = document.getElementById("view");
-  let dragging = false;
+  const sel = document.getElementById("sel");
+  let activeTool = "pen", dragging = false, startN = null, startP = null;
 
-  // 拖笔 → 调 AWI 的 invoke move_pen(实时流自己会更新画面,不用手动刷新)
-  async function moveTo(ev) {
-    const r = view.getBoundingClientRect();
-    const x = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width));
-    const y = Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height));
-    await fetch("/invoke", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "move_pen", args: { x, y } }) });
+  function invoke(name, args) {
+    return fetch("/invoke", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, args }) });
   }
-  view.addEventListener("pointerdown", (e) => { dragging = true; view.setPointerCapture(e.pointerId); moveTo(e); });
-  view.addEventListener("pointermove", (e) => { if (dragging) moveTo(e); });
-  view.addEventListener("pointerup", () => { dragging = false; });
+  // 归一化坐标(0..1)和相对画面的像素坐标(给选区框定位用)
+  function norm(ev) {
+    const r = view.getBoundingClientRect();
+    return { x: Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)),
+             y: Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height)) };
+  }
+  function px(ev) {
+    const r = view.getBoundingClientRect();
+    return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+  }
+
+  view.addEventListener("pointerdown", (e) => {
+    view.setPointerCapture(e.pointerId);
+    dragging = true; startN = norm(e); startP = px(e);
+    if (activeTool === "move") { invoke("move_pen", { x: startN.x, y: startN.y }); return; }
+    // 笔/橡皮:开始拉选区框
+    sel.style.display = "block"; drawSel(e);
+  });
+  view.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    if (activeTool === "move") { const n = norm(e); invoke("move_pen", { x: n.x, y: n.y }); return; }
+    drawSel(e);
+  });
+  view.addEventListener("pointerup", (e) => {
+    if (!dragging) return;
+    dragging = false;
+    if (activeTool === "move") return;
+    sel.style.display = "none";
+    const endN = norm(e);
+    const area = { x1: Math.min(startN.x, endN.x), x2: Math.max(startN.x, endN.x),
+                   y1: Math.min(startN.y, endN.y), y2: Math.max(startN.y, endN.y) };
+    invoke(activeTool === "eraser" ? "erase" : "draw", area);   // 一次拖拽 = 一次 invoke
+  });
+  // 画选区虚线框
+  function drawSel(ev) {
+    const p = px(ev);
+    sel.style.left = Math.min(startP.x, p.x) + "px";
+    sel.style.top = Math.min(startP.y, p.y) + "px";
+    sel.style.width = Math.abs(p.x - startP.x) + "px";
+    sel.style.height = Math.abs(p.y - startP.y) + "px";
+  }
+
+  // 桌面下方切换激活工具:笔 / 橡皮 / 移动
+  function setTool(t) {
+    activeTool = t;
+    for (const k of ["pen", "eraser", "move"])
+      document.getElementById("tool-" + k).classList.toggle("active", k === t);
+  }
+  document.getElementById("tool-pen").onclick = () => setTool("pen");
+  document.getElementById("tool-eraser").onclick = () => setTool("eraser");
+  document.getElementById("tool-move").onclick = () => setTool("move");
   document.getElementById("reset").onclick = () => fetch("/reset", { method: "POST" });
 
   // 状态条:每秒拉一次 /awi-stats

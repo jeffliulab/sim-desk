@@ -25,15 +25,22 @@ from world import DeskWorld
 
 world = DeskWorld()  # 单个全局世界,自己独立运行
 
+STREAM_FPS = 15  # 实时画面(MJPEG)帧率
+SSE_POLL_INTERVAL_S = 0.25  # AWI 流量 SSE 多久查一次新事件;与脑端 presentation/server 对齐
+AWI_LOG_MAXLEN = 400  # 保留多少条 AWI 流量历史;与脑端 src/awi_log.py 对齐
+
+# 允许哪些网页源跨域访问;默认只放本机 :3000(脑端网页嵌本世界的 /stream),设 ANIMA_CORS_ORIGINS=* 可全开
+_CORS = [o.strip() for o in os.getenv("ANIMA_CORS_ORIGINS", "http://localhost:3000").split(",") if o.strip()]
+
 app = FastAPI(title="sim-desk world")
 app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
+    CORSMiddleware, allow_origins=_CORS, allow_methods=["*"], allow_headers=["*"]
 )
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 
 # ---- AWI 流量记账(给世界网页的状态条 + terminal)----
-_LOG: deque = deque(maxlen=200)
+_LOG: deque = deque(maxlen=AWI_LOG_MAXLEN)
 _SEQ = 0
 _COUNTS: dict[str, int] = {}
 
@@ -84,9 +91,9 @@ def reset() -> dict:
 async def stream() -> StreamingResponse:
     async def gen():
         while True:
-            jpg = render_desk(world.pen, fmt="JPEG")
+            jpg = render_desk(world.pen, world.canvas, fmt="JPEG")
             yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpg + b"\r\n"
-            await asyncio.sleep(1 / 15)  # ~15fps
+            await asyncio.sleep(1 / STREAM_FPS)
 
     return StreamingResponse(gen(), media_type="multipart/x-mixed-replace; boundary=frame")
 
@@ -99,7 +106,7 @@ async def awi_events() -> StreamingResponse:
             last = e["id"]
             yield f"data: {json.dumps(e, ensure_ascii=False)}\n\n"
         while True:
-            await asyncio.sleep(0.25)
+            await asyncio.sleep(SSE_POLL_INTERVAL_S)
             for e in [x for x in list(_LOG) if x["id"] > last]:
                 last = e["id"]
                 yield f"data: {json.dumps(e, ensure_ascii=False)}\n\n"
@@ -110,6 +117,11 @@ async def awi_events() -> StreamingResponse:
 @app.get("/awi-stats")  # 状态条:总数 + 各方法计数 + 最近一次
 def awi_stats() -> dict:
     return {"total": _SEQ, "counts": _COUNTS, "last": _LOG[-1] if _LOG else None}
+
+
+@app.get("/health")  # 轻量在线探活:给 ANIMA 的 online() 用,故意【不记】AWI 流量,免得刷屏
+def health() -> dict:
+    return {"ok": True}
 
 
 @app.get("/")  # 世界自己的人类 UI(单页)
